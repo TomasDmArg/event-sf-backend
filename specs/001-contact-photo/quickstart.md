@@ -22,9 +22,11 @@ scenarios in `spec.md`.
      }'
    ```
 
-   Expect `201` with `"photo"` echoed back in the response.
+   Expect `201` with `"photo"` in the response as a **`data:image/webp;base64,...`**
+   string — the backend re-encodes every accepted upload to WebP (per Clarifications),
+   so even a PNG upload comes back as WebP.
 
-2. Oversized/invalid photo is rejected:
+2. Oversized/invalid/non-image photo is rejected:
 
    ```bash
    curl -X POST http://127.0.0.1:8000/api/v1/contacts \
@@ -32,9 +34,20 @@ scenarios in `spec.md`.
      -d '{"first_name":"Bad","last_name":"Photo","email":"bad@example.com","photo":"not-a-data-url"}'
    ```
 
-   Expect `422`.
+   Expect `422`. Also try a syntactically valid data URL wrapping random (non-image)
+   bytes with an `image/png` prefix — expect `422` too, since the backend decodes and
+   verifies the actual bytes rather than trusting the declared MIME type.
 
-3. PUT (full replace) without `photo` clears it — confirms the backend contract
+3. Confirm the list endpoint includes the photo too (not just detail):
+
+   ```bash
+   curl http://127.0.0.1:8000/api/v1/contacts
+   ```
+
+   Expect the contact created in step 1 to show its `photo` field in the list
+   response, same as `GET /api/v1/contacts/{id}` would.
+
+4. PUT (full replace) without `photo` clears it — confirms the backend contract
    documented in `data-model.md`:
 
    ```bash

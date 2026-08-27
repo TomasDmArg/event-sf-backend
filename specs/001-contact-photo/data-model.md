@@ -7,15 +7,25 @@ Adds one field to the existing `Contact` model (`app/models.py`) and its schemas
 
 | Field   | Type              | Nullable | Notes                                                                 |
 |---------|-------------------|----------|------------------------------------------------------------------------|
-| `photo` | `TEXT`            | Yes      | Base64 data URL, e.g. `data:image/png;base64,iVBORw0KG...`. `None` means "no photo, show initials." |
+| `photo` | `TEXT`            | Yes      | Base64 **WebP** data URL, e.g. `data:image/webp;base64,UklGR...`. Always WebP after server-side processing, regardless of upload format. `None` means "no photo, show initials." |
 
-### Validation rules
+### Validation & processing rules (per Clarifications 2026-08-26)
 
-- Accepted MIME types (parsed from the data URL prefix): `image/jpeg`, `image/png`,
-  `image/webp`, `image/gif`.
-- Max size: 2 MB measured on the **decoded** bytes (reject before it ever reaches the
-  DB), enforced by a Pydantic `field_validator` on `photo` in `ContactBase`.
-- Malformed data URLs (wrong prefix, invalid base64) are rejected with `422`.
+- Accepted **upload** MIME types (parsed from the incoming data URL prefix):
+  `image/jpeg`, `image/png`, `image/webp`, `image/gif`.
+- Max upload size: 2 MB measured on the **decoded** bytes, checked before the image is
+  even handed to Pillow.
+- The declared MIME prefix is **not trusted on its own** — `app/image.py`'s
+  `decode_and_recompress()` decodes the bytes with Pillow (`Image.open` +
+  `.verify()`/re-open pattern) and rejects anything that isn't genuinely a decodable
+  image, regardless of what the prefix claimed.
+- On success, the image is resized (if needed) to a max dimension (e.g. 512px on the
+  longest edge — matches the frontend's own client-side downscale, so this is a
+  backstop, not the primary size reduction) and re-encoded as WebP at a reasonable
+  quality setting, then re-wrapped as a `data:image/webp;base64,...` string — this is
+  the value actually stored in `Contact.photo`.
+- Malformed data URLs, undecodable bytes, or anything that fails Pillow verification
+  are rejected with `422`.
 - `None`/omitted is always valid (no photo).
 
 ### Schema changes

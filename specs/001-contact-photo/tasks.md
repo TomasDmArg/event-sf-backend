@@ -12,8 +12,10 @@
 
 - [ ] T001 Add `photo: Mapped[str | None] = mapped_column(Text)` to `Contact` in `app/models.py`
 - [ ] T002 Add `photo: str | None = Field(default=None, ...)` to `ContactBase` in `app/schemas.py` (inherited by `ContactCreate`/`ContactReplace`), and to `ContactUpdate` and `ContactRead`
-- [ ] T003 Add a `field_validator` on `photo` in `app/schemas.py` enforcing: valid `data:image/{jpeg,png,webp,gif};base64,...` prefix, valid base64, decoded size ≤ 2 MB — reject otherwise with a clear message
-- [ ] T004 Confirm `crud.py` and `routers/contacts.py` need no changes (both already do generic `model_dump()` field pass-through) — verify by running the existing test suite
+- [ ] T002a Add `Pillow` to `requirements.txt` / `pyproject.toml` dependencies (per Clarifications — see `plan.md` Complexity Tracking)
+- [ ] T003 Create `app/image.py` with `decode_and_recompress(data_url: str) -> str`: parse the data-URL prefix (reject if not `image/{jpeg,png,webp,gif}`), decode base64 (reject if >2 MB decoded or invalid base64), decode+verify with Pillow (reject if not a real image), resize to a max dimension if needed, re-encode as WebP, return a new `data:image/webp;base64,...` string; raise `ValueError` with a clear message on any rejection
+- [ ] T003a Add a `field_validator` on `photo` in `app/schemas.py` (`ContactBase`/`ContactUpdate`) that calls `decode_and_recompress()` and turns a `ValueError` into a Pydantic validation error
+- [ ] T004 Confirm `crud.py` and `routers/contacts.py` need no changes (both already do generic `model_dump()` field pass-through) — verify by running the existing test suite; confirm `GET /api/v1/contacts` (list) returns the same `photo` field as detail, no separate summary schema needed (per Clarifications)
 
 **Checkpoint**: `photo` field exists end-to-end through create/read; ready for story-level tests.
 
@@ -21,9 +23,10 @@
 
 ## Phase 2: User Story 1 — Add a photo to a contact (P1)
 
-- [ ] T005 [US1] Test: `POST /api/v1/contacts` with a valid small base64 photo returns `201` with `photo` echoed, in `tests/test_contacts_api.py`
+- [ ] T005 [US1] Test: `POST /api/v1/contacts` with a valid small base64 photo returns `201` with a `photo` echoed back as a `data:image/webp;base64,...` string (re-encoded, per Clarifications), in `tests/test_contacts_api.py`
 - [ ] T006 [US1] Test: `PATCH /api/v1/contacts/{id}` with a new `photo` replaces the old one, in `tests/test_contacts_api.py`
-- [ ] T007 [US1] Test: `POST`/`PATCH` with an oversized or malformed `photo` returns `422`, in `tests/test_contacts_api.py`
+- [ ] T007 [US1] Test: `POST`/`PATCH` with an oversized, malformed, or non-image (e.g. valid base64 of random bytes with an `image/png` prefix) `photo` returns `422`, in `tests/test_contacts_api.py`
+- [ ] T007a [US1] Test: `GET /api/v1/contacts` (list) includes `photo` on each item, matching what `GET /api/v1/contacts/{id}` returns, in `tests/test_contacts_api.py`
 
 **Checkpoint**: Backend fully supports add/replace with validation — independently demoable via `quickstart.md` step 1–2.
 

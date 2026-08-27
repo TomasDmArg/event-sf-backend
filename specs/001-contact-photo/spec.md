@@ -8,6 +8,18 @@
 
 **Input**: User description: "Let users add a photo to a contact. Bonus points for showing it as a circular profile image, LinkedIn style. If a contact has no photo, keep showing their initials."
 
+## Clarifications
+
+### Session 2026-08-26
+
+- Q: Should the backend actually decode and verify the uploaded photo is real image data, or just trust the declared MIME type in the data-URL prefix? → A: Decode and verify actual bytes (rejecting non-image or corrupt data), not just trust the declared prefix.
+- Q: Should `GET /api/v1/contacts` (the list endpoint) include each contact's full-size photo? → A: Yes — include the full photo in the list response too, but the backend must compress/re-encode it (WebP) after verification so the payload stays light even at list scale.
+- Q: Should the frontend downscale/compress the photo in the browser before base64-encoding it, or upload the original file as-is? → A: Downscale client-side before upload (in addition to the backend's own compression), so upload payloads and the final stored size both stay small.
+
+These three answers compose into one pipeline: the client resizes the image before
+upload → the backend decodes, verifies, and re-compresses it to WebP for storage →
+both the list and detail endpoints can safely return the full (now small) photo.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Add a photo to a contact (Priority: P1)
@@ -106,13 +118,17 @@ confirm the avatar reverts to initials.
   the list view and the detail view.
 - **FR-006**: System MUST show an initials-based fallback avatar for any contact
   without a photo, using consistent sizing/shape with the photo avatar.
-- **FR-007**: System MUST validate that an uploaded photo is an image file before
-  accepting it.
+- **FR-007**: System MUST decode and verify that an uploaded photo is genuine,
+  well-formed image data before accepting it — not merely trust a client-declared
+  content type.
 - **FR-008**: System MUST enforce a maximum photo file size and reject uploads that
   exceed it with a clear, user-visible error.
 - **FR-009**: The contact edit (full-replace) flow MUST carry forward the current
   photo value when the user does not change it, so editing unrelated fields never
   wipes the photo.
+- **FR-010**: System MUST store the verified photo in a compressed, storage-efficient
+  format (WebP) regardless of the format it was uploaded in, so that returning the
+  full photo from both the list and detail endpoints stays lightweight.
 
 ### Key Entities
 
@@ -138,10 +154,17 @@ confirm the avatar reverts to initials.
 
 - The backend database is in-memory (SQLite), so the simplest and sufficient storage
   approach is a base64-encoded image string field on the Contact record — no file
-  storage/blob service needed for this challenge.
-- A reasonable max photo size is 2 MB before base64 encoding, enforced on both
-  frontend (pre-upload check) and backend (defense in depth).
-- Accepted image types are the common web formats: JPEG, PNG, WebP, GIF.
+  storage/blob service needed for this challenge. A third-party image host was
+  considered and deliberately rejected: it would burn hackathon time on
+  signup/credentials, adds a live network dependency during the demo, and isn't
+  rewarded by any judging criterion — the challenge brief itself hints at base64.
+- A reasonable max upload size is 2 MB before base64 encoding, enforced on both
+  frontend (pre-upload check) and backend (defense in depth); the *stored* size after
+  server-side WebP compression is expected to be well under that.
+- Accepted upload types are the common web formats: JPEG, PNG, WebP, GIF — but the
+  backend re-encodes every accepted upload to WebP before storing it (see
+  Clarifications), so the stored `photo` value is always a WebP data URL regardless
+  of what was uploaded.
 - "Circular, LinkedIn style" means `rounded-full`, fixed aspect-square dimensions, and
   `object-cover` cropping so non-square source images don't distort.
 - This feature spans both the backend (this repo: photo field + validation) and the
