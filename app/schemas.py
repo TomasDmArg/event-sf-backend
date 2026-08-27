@@ -2,6 +2,25 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
+from app.image import decode_and_recompress
+
+_PHOTO_EXAMPLE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7"
+_PHOTO_DESCRIPTION = (
+    "Photo as a base64 data URL (JPEG, PNG, WebP, or GIF). Decoded and verified "
+    "server-side, then re-encoded to WebP for storage — the value you get back "
+    "from the API will always be `data:image/webp;base64,...` regardless of what "
+    "you uploaded. Omit or send `null` to leave the contact without a photo."
+)
+
+
+def _validate_photo(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return decode_and_recompress(value)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
 
 class ContactBase(BaseModel):
     """Fields shared by every contact request and response."""
@@ -69,6 +88,15 @@ class ContactBase(BaseModel):
         description="Free-form notes about the contact. No length limit.",
         examples=["Met at the SF hackathon."],
     )
+    photo: str | None = Field(
+        default=None,
+        description=_PHOTO_DESCRIPTION,
+        examples=[_PHOTO_EXAMPLE],
+    )
+    # No validator here: ContactRead also inherits ContactBase, and it must be able
+    # to load an already-processed WebP value from the database without re-running
+    # (lossy) recompression on every read. The write schemas below each attach the
+    # validator individually instead.
 
 
 _FULL_EXAMPLE = {
@@ -93,6 +121,11 @@ class ContactCreate(ContactBase):
 
     model_config = ConfigDict(json_schema_extra={"examples": [_FULL_EXAMPLE, _MINIMAL_EXAMPLE]})
 
+    @field_validator("photo")
+    @classmethod
+    def _photo_is_valid_image(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
+
 
 class ContactReplace(ContactBase):
     """
@@ -103,6 +136,11 @@ class ContactReplace(ContactBase):
     """
 
     model_config = ConfigDict(json_schema_extra={"examples": [_FULL_EXAMPLE]})
+
+    @field_validator("photo")
+    @classmethod
+    def _photo_is_valid_image(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
 
 
 class ContactUpdate(BaseModel):
@@ -134,6 +172,12 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+    photo: str | None = Field(default=None, description=_PHOTO_DESCRIPTION, examples=[_PHOTO_EXAMPLE])
+
+    @field_validator("photo")
+    @classmethod
+    def _photo_is_valid_image(cls, value: str | None) -> str | None:
+        return _validate_photo(value)
 
 
 class ContactRead(ContactBase):

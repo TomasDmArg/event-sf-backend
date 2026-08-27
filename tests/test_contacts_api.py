@@ -1,3 +1,6 @@
+import base64
+import os
+
 BASE = "/api/v1/contacts"
 
 
@@ -144,3 +147,56 @@ def test_delete_contact(client, payload):
 def test_root_lists_entrypoints(client):
     body = client.get("/").json()
     assert body["contacts"] == BASE
+
+
+def test_create_with_photo_returns_webp(client, payload, tiny_photo):
+    response = client.post(BASE, json={**payload, "photo": tiny_photo})
+    assert response.status_code == 201
+    photo = response.json()["photo"]
+    assert photo.startswith("data:image/webp;base64,")
+
+
+def test_patch_replaces_photo(client, payload, tiny_photo):
+    contact_id = client.post(BASE, json={**payload, "photo": tiny_photo}).json()["id"]
+    original = client.get(f"{BASE}/{contact_id}").json()["photo"]
+
+    # A different source image (GIF, not PNG) so the re-encoded WebP output differs.
+    new_photo = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7"
+    response = client.patch(f"{BASE}/{contact_id}", json={"photo": new_photo})
+    assert response.status_code == 200
+    replaced = response.json()["photo"]
+    assert replaced.startswith("data:image/webp;base64,")
+    assert replaced != original
+
+
+def test_reject_malformed_photo(client, payload):
+    response = client.post(BASE, json={**payload, "photo": "not-a-data-url"})
+    assert response.status_code == 422
+
+
+def test_reject_non_image_photo(client, payload):
+    fake = base64.b64encode(b"this is not actually image data, just padding bytes").decode()
+    response = client.post(BASE, json={**payload, "photo": f"data:image/png;base64,{fake}"})
+    assert response.status_code == 422
+
+
+def test_reject_oversized_photo(client, payload):
+    oversized = base64.b64encode(os.urandom(2_100_000)).decode()
+    response = client.post(BASE, json={**payload, "photo": f"data:image/png;base64,{oversized}"})
+    assert response.status_code == 422
+
+
+def test_list_includes_photo(client, payload, tiny_photo):
+    contact_id = client.post(BASE, json={**payload, "photo": tiny_photo}).json()["id"]
+    detail_photo = client.get(f"{BASE}/{contact_id}").json()["photo"]
+
+    listed = client.get(BASE).json()["items"]
+    item = next(item for item in listed if item["id"] == contact_id)
+    assert item["photo"] == detail_photo
+
+
+def test_patch_clears_photo(client, payload, tiny_photo):
+    contact_id = client.post(BASE, json={**payload, "photo": tiny_photo}).json()["id"]
+    response = client.patch(f"{BASE}/{contact_id}", json={"photo": None})
+    assert response.status_code == 200
+    assert response.json()["photo"] is None

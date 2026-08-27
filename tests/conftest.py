@@ -21,6 +21,12 @@ def client() -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def tiny_photo() -> str:
+    """A 1x1 PNG, small enough to be a valid upload."""
+    return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+
+@pytest.fixture
 def payload() -> dict:
     return {
         "first_name": "Ada",
