@@ -142,3 +142,8 @@ and the other contact record no longer exists.
   work by repo.
 - This is the bonus/stretch feature, built only after Challenge 1 and Challenge 2 are
   each merged and demoable.
+- Because `Contact.email` is unique (enforced today via `_reject_duplicate_email` in
+  `app/routers/contacts.py`), two contacts can never actually share an *exact* email
+  under normal use — in practice the "matching email" detection path only fires if
+  that constraint is ever relaxed or bypassed; the demo should rely on matching phone
+  and/or similar name to reliably show a flagged pair.
